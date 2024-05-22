@@ -71,23 +71,23 @@ namespace MAST_Service
 
                 //For OT
                 var OTdata = (from a in _context.UserDailyShiftAttendanceJunctions
-                              join b in _context.OtextendRequestJunctions on a.UserDailyShiftAttendanceId equals b.UserDailyShiftAttendanceId
-                            where a.IsArchive != true && b.IsArchive != true && a.AttendanceActionStatusId == 5
+                             // join b in _context.OtextendRequestJunctions on a.UserDailyShiftAttendanceId equals b.UserDailyShiftAttendanceId
+                            where a.IsArchive != true  && a.AttendanceActionStatusId == 5
                             select new
                             {
                                 a.UserDailyShiftAttendanceId,
                                 a.UserDailyShiftJunctionId,
                                 a.UserId,
-                                a.ActionDateTime,
-                                b.UserOtextendInMinutes
+                                a.ActionDateTime
+                               
                             }).ToList();
                 for (int i = 0; i < OTdata.Count; i++)
                 {
                     UserDailyShiftAttendanceJunction? isCheckOut = _context.UserDailyShiftAttendanceJunctions.Where(a => a.UserDailyShiftJunctionId == OTdata[i].UserDailyShiftJunctionId && a.IsArchive != true && a.AttendanceActionStatusId == 6).FirstOrDefault();
                     if (isCheckOut == null)
                     {
-                        
-                        var OTHours = OTdata[i].UserOtextendInMinutes;
+
+                        var OTHours = _context.OtextendRequestJunctions.Where(a => a.UserDailyShiftAttendanceId == OTdata[i].UserDailyShiftAttendanceId && a.IsArchive != true).Select(a => a.UserOtextendInMinutes).FirstOrDefault();
                         if (OTHours != null && OTdata[i].ActionDateTime != null)
                         {
                             var endDate = Convert.ToDateTime(OTdata[i].ActionDateTime).AddMinutes(Convert.ToDouble(OTHours));
