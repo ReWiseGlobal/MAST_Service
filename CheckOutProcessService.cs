@@ -35,57 +35,78 @@ namespace MAST_Service
             try
             {
                 var data = (from a in _context.UserDailyShiftAttendanceJunctions
-                            where a.IsArchive != true && a.AttendanceActionStatusId == 1
-                            select a).ToList();
+                            join b in _context.UserDailyShiftJunctions on a.UserDailyShiftJunctionId equals b.UserDailyShiftJunctionId
+                            join c in _context.DailyShiftMasters on b.DailyShiftId equals c.DailyShiftId
+                            where a.IsArchive != true && b.IsArchive != true && c.IsArchive != true && a.AttendanceActionStatusId == 1
+                            select new
+                            {
+                                a.UserDailyShiftJunctionId,
+                                a.UserId,
+                                c.ShiftEndDateTime,
+                                c.ShiftStartDateTime
+                            }).ToList();
                 for(int i = 0; i < data.Count; i++)
                 {
                     UserDailyShiftAttendanceJunction? isCheckOut = _context.UserDailyShiftAttendanceJunctions.Where(a => a.UserDailyShiftJunctionId == data[i].UserDailyShiftJunctionId && a.IsArchive != true && a.AttendanceActionStatusId == 4).FirstOrDefault();
                     if (isCheckOut == null)
                     {
-                        UserDailyShiftAttendanceJunction userDailyShift = new UserDailyShiftAttendanceJunction();
-                        userDailyShift.UserDailyShiftJunctionId = data[i].UserDailyShiftJunctionId;
-                        userDailyShift.UserId = data[i].UserId;
-                        userDailyShift.AttendanceActionStatusId = 4;
-                        userDailyShift.ActionDateTime = (from x in _context.UserDailyShiftJunctions
-                                                         join y in _context.DailyShiftMasters on x.DailyShiftId equals y.DailyShiftId
-                                                         where x.IsArchive != true && y.IsArchive != true && x.UserDailyShiftJunctionId == data[i].UserDailyShiftJunctionId
-                                                         select y.ShiftEndDateTime).FirstOrDefault();
-                        userDailyShift.CreatedOn= DateTime.Now;
-                        userDailyShift.IsArchive = false;
-                        _context.UserDailyShiftAttendanceJunctions.Add(userDailyShift);
-                        _context.SaveChanges();
+                        var endtime = Convert.ToDateTime(data[i].ShiftEndDateTime).AddHours(5);
+                        if(DateTime.Now > endtime)
+                        {
+                            UserDailyShiftAttendanceJunction userDailyShift = new UserDailyShiftAttendanceJunction();
+                            userDailyShift.UserDailyShiftJunctionId = data[i].UserDailyShiftJunctionId;
+                            userDailyShift.UserId = data[i].UserId;
+                            userDailyShift.AttendanceActionStatusId = 4;
+                            userDailyShift.ActionDateTime = data[i].ShiftEndDateTime;
+                            userDailyShift.CreatedOn = DateTime.Now;
+                            userDailyShift.IsArchive = false;
+                            _context.UserDailyShiftAttendanceJunctions.Add(userDailyShift);
+                            _context.SaveChanges();
 
-                        bool? IsUpdateWorkTime= await UpdateWorkTime(data[i].UserDailyShiftJunctionId);
+                            bool? IsUpdateWorkTime = await UpdateWorkTime(data[i].UserDailyShiftJunctionId);
+                        }
+                        
                     }
                 }
 
                 //For OT
                 var OTdata = (from a in _context.UserDailyShiftAttendanceJunctions
-                            where a.IsArchive != true && a.AttendanceActionStatusId == 5
-                            select a).ToList();
+                              join b in _context.OtextendRequestJunctions on a.UserDailyShiftAttendanceId equals b.UserDailyShiftAttendanceId
+                            where a.IsArchive != true && b.IsArchive != true && a.AttendanceActionStatusId == 5
+                            select new
+                            {
+                                a.UserDailyShiftAttendanceId,
+                                a.UserDailyShiftJunctionId,
+                                a.UserId,
+                                a.ActionDateTime,
+                                b.UserOtextendInMinutes
+                            }).ToList();
                 for (int i = 0; i < OTdata.Count; i++)
                 {
                     UserDailyShiftAttendanceJunction? isCheckOut = _context.UserDailyShiftAttendanceJunctions.Where(a => a.UserDailyShiftJunctionId == OTdata[i].UserDailyShiftJunctionId && a.IsArchive != true && a.AttendanceActionStatusId == 6).FirstOrDefault();
                     if (isCheckOut == null)
                     {
-                        UserDailyShiftAttendanceJunction userDailyShift = new UserDailyShiftAttendanceJunction();
-                        userDailyShift.UserDailyShiftJunctionId = OTdata[i].UserDailyShiftJunctionId;
-                        userDailyShift.UserId = OTdata[i].UserId;
-                        userDailyShift.AttendanceActionStatusId = 6;
-                        var OTHours = (from x in _context.OtextendRequestJunctions
-                                                         
-                                                         where x.IsArchive != true  && x.UserDailyShiftAttendanceId == OTdata[i].UserDailyShiftAttendanceId
-                                                         select x.UserOtextendInMinutes).FirstOrDefault();
-                        if(OTHours != null && OTdata[i].ActionDateTime!=null)
+                        
+                        var OTHours = OTdata[i].UserOtextendInMinutes;
+                        if (OTHours != null && OTdata[i].ActionDateTime != null)
                         {
-                            userDailyShift.ActionDateTime = Convert.ToDateTime(OTdata[i].ActionDateTime).AddMinutes(Convert.ToDouble(OTHours));
-                        }
-                        userDailyShift.CreatedOn = DateTime.Now;
-                        userDailyShift.IsArchive = false;
-                        _context.UserDailyShiftAttendanceJunctions.Add(userDailyShift);
-                        _context.SaveChanges();
+                            var endDate = Convert.ToDateTime(OTdata[i].ActionDateTime).AddMinutes(Convert.ToDouble(OTHours));
+                            if(DateTime.Now > endDate)
+                            {
+                                UserDailyShiftAttendanceJunction userDailyShift = new UserDailyShiftAttendanceJunction();
+                                userDailyShift.UserDailyShiftJunctionId = OTdata[i].UserDailyShiftJunctionId;
+                                userDailyShift.UserId = OTdata[i].UserId;
+                                userDailyShift.AttendanceActionStatusId = 6;
+                                userDailyShift.ActionDateTime = endDate;
+                                userDailyShift.CreatedOn = DateTime.Now;
+                                userDailyShift.IsArchive = false;
+                                _context.UserDailyShiftAttendanceJunctions.Add(userDailyShift);
+                                _context.SaveChanges();
 
-                        bool? IsUpdateWorkTime = await UpdateOTWorkTime(OTdata[i].UserDailyShiftJunctionId);
+                                bool? IsUpdateWorkTime = await UpdateOTWorkTime(OTdata[i].UserDailyShiftJunctionId);
+                            }
+                        }
+                        
                     }
                 }
             }
