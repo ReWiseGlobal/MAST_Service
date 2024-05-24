@@ -34,6 +34,7 @@ namespace MAST_Service
 
             try
             {
+                logger.LogInformation("Worker function start", DateTimeOffset.Now);
                 var data = (from a in _context.UserDailyShiftAttendanceJunctions
                             join b in _context.UserDailyShiftJunctions on a.UserDailyShiftJunctionId equals b.UserDailyShiftJunctionId
                             join c in _context.DailyShiftMasters on b.DailyShiftId equals c.DailyShiftId
@@ -109,6 +110,7 @@ namespace MAST_Service
                         
                     }
                 }
+                logger.LogInformation("Worker function end", DateTimeOffset.Now);
             }
             catch (Exception ex)
             {
