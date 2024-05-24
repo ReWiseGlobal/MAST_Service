@@ -12,6 +12,8 @@ using Azure.Core;
 using System.Net;
 using MAST_Service.Models;
 using Microsoft.EntityFrameworkCore;
+using static System.Net.Mime.MediaTypeNames;
+using System.Reflection.PortableExecutable;
 
 namespace MAST_Service
 {
@@ -35,81 +37,151 @@ namespace MAST_Service
             try
             {
                 logger.LogInformation("Worker function start", DateTimeOffset.Now);
-                var data = (from a in _context.UserDailyShiftAttendanceJunctions
-                            join b in _context.UserDailyShiftJunctions on a.UserDailyShiftJunctionId equals b.UserDailyShiftJunctionId
-                            join c in _context.DailyShiftMasters on b.DailyShiftId equals c.DailyShiftId
-                            where a.IsArchive != true && b.IsArchive != true && c.IsArchive != true && a.AttendanceActionStatusId == 1
-                            select new
-                            {
-                                a.UserDailyShiftJunctionId,
-                                a.UserId,
-                                c.ShiftEndDateTime,
-                                c.ShiftStartDateTime
-                            }).ToList();
-                for(int i = 0; i < data.Count; i++)
-                {
-                    UserDailyShiftAttendanceJunction? isCheckOut = _context.UserDailyShiftAttendanceJunctions.Where(a => a.UserDailyShiftJunctionId == data[i].UserDailyShiftJunctionId && a.IsArchive != true && a.AttendanceActionStatusId == 4).FirstOrDefault();
-                    if (isCheckOut == null)
-                    {
-                        var endtime = Convert.ToDateTime(data[i].ShiftEndDateTime).AddHours(5);
-                        if(DateTime.Now > endtime)
-                        {
-                            UserDailyShiftAttendanceJunction userDailyShift = new UserDailyShiftAttendanceJunction();
-                            userDailyShift.UserDailyShiftJunctionId = data[i].UserDailyShiftJunctionId;
-                            userDailyShift.UserId = data[i].UserId;
-                            userDailyShift.AttendanceActionStatusId = 4;
-                            userDailyShift.ActionDateTime = data[i].ShiftEndDateTime;
-                            userDailyShift.CreatedOn = DateTime.Now;
-                            userDailyShift.IsArchive = false;
-                            _context.UserDailyShiftAttendanceJunctions.Add(userDailyShift);
-                            _context.SaveChanges();
 
-                            bool? IsUpdateWorkTime = await UpdateWorkTime(data[i].UserDailyShiftJunctionId);
+                var myConnectionString = this.Configuration.GetSection("ConnectionStrings")["DefaultConnection"];
+                
+                using (SqlConnection connection = new SqlConnection(myConnectionString))
+                {
+                    SqlCommand cmd = new SqlCommand("sp_GetListOfCheckInUsers", connection);
+                    cmd.CommandType = System.Data.CommandType.StoredProcedure;
+
+                    connection.Open();
+
+                    using (var reader = cmd.ExecuteReader())
+                    {
+                        while (reader.Read())
+                        {
+                            CheckoutProcessModel obj = new CheckoutProcessModel();
+                            long UserDailyShiftJunctionId = Convert.ToInt64(reader["UserDailyShiftJunctionId"]);
+                            long UserId = Convert.ToInt64(reader["UserId"]);
+                            DateTime ShiftEndDateTime = Convert.ToDateTime(reader["ShiftEndDateTime"]);
+                            DateTime ShiftStartDateTime = Convert.ToDateTime(reader["ShiftStartDateTime"]);
+
+
+                            using (SqlConnection connection1 = new SqlConnection(myConnectionString))
+                            {
+                                SqlCommand cmd1 = new SqlCommand("sp_CheckIsCheckoutDone", connection1);
+                                cmd1.CommandType = System.Data.CommandType.StoredProcedure;
+                                cmd1.Parameters.Add("@UserDailyShiftJunctionId", SqlDbType.BigInt).Value = UserDailyShiftJunctionId;
+                                connection1.Open();
+
+                                using (var reader1 = cmd1.ExecuteReader())
+                                {
+
+                                    if (!reader1.HasRows)
+                                    {
+                                        var endtime = Convert.ToDateTime(ShiftEndDateTime).AddHours(5);
+                                        if (DateTime.Now > endtime)
+                                        {
+                                            
+
+                                            using (SqlConnection connection2 = new SqlConnection(myConnectionString))
+                                            {
+                                                connection2.Open();
+                                                SqlCommand cmdinsert = new SqlCommand("sp_insertCheckOutOfUser", connection2);
+                                                cmdinsert.CommandType = System.Data.CommandType.StoredProcedure;
+                                                cmdinsert.Parameters.Add("@UserDailyShiftJunctionId", SqlDbType.BigInt).Value = UserDailyShiftJunctionId;
+                                                cmdinsert.Parameters.Add("@UserId", SqlDbType.BigInt).Value = UserId;
+                                                cmdinsert.Parameters.Add("@AttendanceActionStatusId", SqlDbType.Int).Value = 4;
+                                                cmdinsert.Parameters.Add("@ActionDateTime", SqlDbType.DateTime).Value = ShiftEndDateTime;
+                                                cmdinsert.ExecuteNonQuery();
+                                                connection2.Close();
+
+                                            }
+
+                                            bool? IsUpdateWorkTime = await UpdateWorkTime(UserDailyShiftJunctionId);
+                                        }
+
+                                    }
+                                }
+
+                                connection1.Close();
+                            }
+
+                            
                         }
-                        
                     }
+
+                    connection.Close();
                 }
+
 
                 //For OT
-                var OTdata = (from a in _context.UserDailyShiftAttendanceJunctions
-                             // join b in _context.OtextendRequestJunctions on a.UserDailyShiftAttendanceId equals b.UserDailyShiftAttendanceId
-                            where a.IsArchive != true  && a.AttendanceActionStatusId == 5
-                            select new
-                            {
-                                a.UserDailyShiftAttendanceId,
-                                a.UserDailyShiftJunctionId,
-                                a.UserId,
-                                a.ActionDateTime
-                               
-                            }).ToList();
-                for (int i = 0; i < OTdata.Count; i++)
+                using (SqlConnection connection = new SqlConnection(myConnectionString))
                 {
-                    UserDailyShiftAttendanceJunction? isCheckOut = _context.UserDailyShiftAttendanceJunctions.Where(a => a.UserDailyShiftJunctionId == OTdata[i].UserDailyShiftJunctionId && a.IsArchive != true && a.AttendanceActionStatusId == 6).FirstOrDefault();
-                    if (isCheckOut == null)
+                    SqlCommand cmd = new SqlCommand("sp_GetListOfOTCheckInUsers", connection);
+                    cmd.CommandType = System.Data.CommandType.StoredProcedure;
+
+                    connection.Open();
+
+                    using (var reader = cmd.ExecuteReader())
                     {
-
-                        var OTHours = _context.OtextendRequestJunctions.Where(a => a.UserDailyShiftAttendanceId == OTdata[i].UserDailyShiftAttendanceId && a.IsArchive != true).Select(a => a.UserOtextendInMinutes).FirstOrDefault();
-                        if (OTHours != null && OTdata[i].ActionDateTime != null)
+                        while (reader.Read())
                         {
-                            var endDate = Convert.ToDateTime(OTdata[i].ActionDateTime).AddMinutes(Convert.ToDouble(OTHours));
-                            if(DateTime.Now > endDate)
-                            {
-                                UserDailyShiftAttendanceJunction userDailyShift = new UserDailyShiftAttendanceJunction();
-                                userDailyShift.UserDailyShiftJunctionId = OTdata[i].UserDailyShiftJunctionId;
-                                userDailyShift.UserId = OTdata[i].UserId;
-                                userDailyShift.AttendanceActionStatusId = 6;
-                                userDailyShift.ActionDateTime = endDate;
-                                userDailyShift.CreatedOn = DateTime.Now;
-                                userDailyShift.IsArchive = false;
-                                _context.UserDailyShiftAttendanceJunctions.Add(userDailyShift);
-                                _context.SaveChanges();
+                            CheckoutProcessModel obj = new CheckoutProcessModel();
+                            long UserDailyShiftJunctionId = Convert.ToInt64(reader["UserDailyShiftJunctionId"]);
+                            long UserId = Convert.ToInt64(reader["UserId"]);
+                            long UserDailyShiftAttendanceID = Convert.ToInt64(reader["UserDailyShiftAttendanceID"]);
+                            DateTime? ActionDateTime = Convert.ToDateTime(reader["ActionDateTime"]);
 
-                                bool? IsUpdateWorkTime = await UpdateOTWorkTime(OTdata[i].UserDailyShiftJunctionId);
+
+                            int recordCount = 0;
+
+                            using (SqlConnection connection1 = new SqlConnection(myConnectionString))
+                            {
+                                using (SqlCommand command = new SqlCommand("SELECT COUNT(*) AS RecordCount FROM UserDailyShiftAttendanceJunction WHERE UserDailyShiftJunctionID=" + UserDailyShiftJunctionId + " and AttendanceActionStatusID=6 and IsArchive!='1';", connection1))
+                                {
+                                    connection1.Open();
+                                    recordCount = (int)command.ExecuteScalar();
+                                    connection1.Close();
+                                }
                             }
+                            if (recordCount == 0)
+                            {
+                                int? OTHours = 0;
+                                using (SqlConnection connection1 = new SqlConnection(myConnectionString))
+                                {
+                                    using (SqlCommand command = new SqlCommand("SELECT TOP 1 UserOtextendInMinutes FROM OtextendRequestJunction WHERE UserDailyShiftAttendanceID=" + UserDailyShiftAttendanceID + " and IsArchive!='1';", connection1))
+                                    {
+                                        connection1.Open();
+                                        OTHours = (int)command.ExecuteScalar();
+                                        connection1.Close();
+                                    }
+                                }
+                                
+                                if (OTHours != null && ActionDateTime != null)
+                                {
+                                    var endDate = Convert.ToDateTime(ActionDateTime).AddMinutes(Convert.ToDouble(OTHours));
+                                    if (DateTime.Now > endDate)
+                                    {
+                                        using (SqlConnection connection2 = new SqlConnection(myConnectionString))
+                                        {
+                                            connection2.Open();
+                                            SqlCommand cmdinsert = new SqlCommand("sp_insertCheckOutOfUser", connection2);
+                                            cmdinsert.CommandType = System.Data.CommandType.StoredProcedure;
+                                            cmdinsert.Parameters.Add("@UserDailyShiftJunctionId", SqlDbType.BigInt).Value = UserDailyShiftJunctionId;
+                                            cmdinsert.Parameters.Add("@UserId", SqlDbType.BigInt).Value = UserId;
+                                            cmdinsert.Parameters.Add("@AttendanceActionStatusId", SqlDbType.Int).Value = 6;
+                                            cmdinsert.Parameters.Add("@ActionDateTime", SqlDbType.DateTime).Value = endDate;
+                                            cmdinsert.ExecuteNonQuery();
+                                            connection2.Close();
+
+                                        }
+                                        
+
+                                        bool? IsUpdateWorkTime = await UpdateOTWorkTime(UserDailyShiftJunctionId);
+                                    }
+                                }
+                            }
+
+
                         }
-                        
                     }
+
+                    connection.Close();
                 }
+                
+                
                 logger.LogInformation("Worker function end", DateTimeOffset.Now);
             }
             catch (Exception ex)
@@ -120,6 +192,7 @@ namespace MAST_Service
 
         public async Task<bool?> UpdateWorkTime( long? UserDailyShiftJunctionID)
         {
+            var myConnectionString = this.Configuration.GetSection("ConnectionStrings")["DefaultConnection"];
             bool? IsUpdateWorkTime = false;
             try
             {
@@ -133,107 +206,141 @@ namespace MAST_Service
                 //find current day and shift
 
                 //Shift details                                   
-                var UserDailyShiftAttendance = await (from UDDSAJ in _context.UserDailyShiftAttendanceJunctions
-                                                      where UDDSAJ.IsArchive != true && UDDSAJ.UserDailyShiftJunctionId == UserDailyShiftJunctionID
-                                                      orderby UDDSAJ.UserDailyShiftAttendanceId ascending
-                                                      select new
-                                                      {
-                                                          UserDailyShiftAttendanceID = UDDSAJ.UserDailyShiftAttendanceId,
-                                                          AttendanceActionStatusID = UDDSAJ.AttendanceActionStatusId,
-                                                          ActionDateTime = UDDSAJ.ActionDateTime,
+                List<CheckoutProcessModel> list = new List<CheckoutProcessModel>();
 
-                                                      }).ToListAsync();
-
-                if (Convert.ToInt16(UserDailyShiftAttendance.Count) != 0)
+                using (SqlConnection connection1 = new SqlConnection(myConnectionString))
                 {
+                    SqlCommand cmd1 = new SqlCommand("sp_GetListOfAttendanceShifts", connection1);
+                    cmd1.CommandType = System.Data.CommandType.StoredProcedure;
+                    cmd1.Parameters.Add("@UserDailyShiftJunctionID", SqlDbType.BigInt).Value = UserDailyShiftJunctionID;
+                    connection1.Open();
 
-                    int TotalNoOfShiftAttendanceRows = UserDailyShiftAttendance.Count;
-                    DateTime PreviousStageDateTime = DateTime.Now;
-                    for (int row = 0; row < UserDailyShiftAttendance.Count; row++)
+                    using (var reader1 = cmd1.ExecuteReader())
                     {
-                        long? UserDailyShiftAttendanceID = UserDailyShiftAttendance[row].UserDailyShiftAttendanceID;
-                        AttendanceActionStatusID = UserDailyShiftAttendance[row].AttendanceActionStatusID;
-                        DateTime ActionDateTime = (DateTime)UserDailyShiftAttendance[row].ActionDateTime;
-                        PreviousStageDateTime = ActionDateTime;
-                        if (AttendanceActionStatusID == 1)
+
+                        if (reader1.HasRows)
                         {
-                            //for checkIn
-                            TimeSpan difference = (DateTime.Now - ActionDateTime);
-                            int hours = (int)difference.TotalHours;
-                            int minutes = difference.Minutes;
-                            TotalTimeFromCheckIn = hours + " H" + " " + minutes + " M";
-                            if (TotalNoOfShiftAttendanceRows == 1)
+                            while (reader1.Read())
                             {
-                                //if only checkin state happand  
+                                CheckoutProcessModel obj = new CheckoutProcessModel();
+                                obj.UserDailyShiftJunctionId = Convert.ToInt64(reader1["UserDailyShiftJunctionId"]);
+                                obj.AttendanceActionStatusID = Convert.ToInt16(reader1["AttendanceActionStatusID"]);
+                                obj.ActionDateTime = Convert.ToDateTime(reader1["ActionDateTime"]);
+                                list.Add(obj);
+                            }
+                        }
+                    }
+                    connection1.Close();
+                }
+                int TotalNoOfShiftAttendanceRows = list.Count;
+                DateTime PreviousStageDateTime = DateTime.Now;
+                for (int row = 0; row < list.Count; row++)
+                {
+                    long UserDailyShiftJunctionId = Convert.ToInt64(list[row].UserDailyShiftJunctionId);
+                    AttendanceActionStatusID = Convert.ToInt16(list[row].AttendanceActionStatusID);
+                    DateTime ActionDateTime = Convert.ToDateTime(list[row].ActionDateTime);
+                    PreviousStageDateTime = ActionDateTime;
+
+                    if (AttendanceActionStatusID == 1)
+                    {
+                        //for checkIn
+                        TimeSpan difference = (DateTime.Now - ActionDateTime);
+                        int hours = (int)difference.TotalHours;
+                        int minutes = difference.Minutes;
+                        TotalTimeFromCheckIn = hours + " H" + " " + minutes + " M";
+                        if (TotalNoOfShiftAttendanceRows == 1)
+                        {
+                            //if only checkin state happand  
+                            _ActualWorkTime = _ActualWorkTime + await FindWorkTimeInMinutes(ActionDateTime, DateTime.Now);
+                        }
+                        else
+                        {
+                            //if only checkin state happand
+                            var ActionDateTimeVar = list[row + 1].ActionDateTime;
+
+                            DateTime NextActionDateTime = Convert.ToDateTime(ActionDateTimeVar);
+                            _ActualWorkTime = _ActualWorkTime + await FindWorkTimeInMinutes(ActionDateTime, NextActionDateTime);
+                        }
+
+                    }
+                    else
+                    {
+                        //if case of Pause,Resume,Check-Out
+                        if (TotalNoOfShiftAttendanceRows == (row + 1))
+                        {
+                            //if last state
+                            //if Pause action
+                            if (AttendanceActionStatusID == 2)
+                            {
+                                //find Break Time
+                                _TotalBreakTime = _TotalBreakTime + await FindWorkTimeInMinutes(ActionDateTime, DateTime.Now);
+                            }
+                            else if (AttendanceActionStatusID == 3)
+                            {
+                                //find Actual work Time
                                 _ActualWorkTime = _ActualWorkTime + await FindWorkTimeInMinutes(ActionDateTime, DateTime.Now);
                             }
-                            else
+                            else if (AttendanceActionStatusID == 4)
                             {
-                                //if only checkin state happand
-                                var ActionDateTimeVar= UserDailyShiftAttendance[row + 1].ActionDateTime;
-
-                                DateTime NextActionDateTime = Convert.ToDateTime(ActionDateTimeVar);
-                                _ActualWorkTime = _ActualWorkTime + await FindWorkTimeInMinutes(ActionDateTime, NextActionDateTime);
                             }
 
                         }
                         else
                         {
-                            //if case of Pause,Resume,Check-Out
-                            if (TotalNoOfShiftAttendanceRows == (row + 1))
+
+                            if (AttendanceActionStatusID == 2)
                             {
-                                //if last state
-                                //if Pause action
-                                if (AttendanceActionStatusID == 2)
-                                {
-                                    //find Break Time
-                                    _TotalBreakTime = _TotalBreakTime + await FindWorkTimeInMinutes(ActionDateTime, DateTime.Now);
-                                }
-                                else if (AttendanceActionStatusID == 3)
-                                {
-                                    //find Actual work Time
-                                    _ActualWorkTime = _ActualWorkTime + await FindWorkTimeInMinutes(ActionDateTime, DateTime.Now);
-                                }
-                                else if (AttendanceActionStatusID == 4)
-                                {
-                                }
+                                //find Break Time
+                                DateTime NextActionDateTime = (DateTime)list[row + 1].ActionDateTime;
+                                _TotalBreakTime = _TotalBreakTime + await FindWorkTimeInMinutes(ActionDateTime, NextActionDateTime);
 
                             }
-                            else
+                            else if (AttendanceActionStatusID == 3)
                             {
-
-                                if (AttendanceActionStatusID == 2)
-                                {
-                                    //find Break Time
-                                    DateTime NextActionDateTime = (DateTime)UserDailyShiftAttendance[row + 1].ActionDateTime;
-                                    _TotalBreakTime = _TotalBreakTime + await FindWorkTimeInMinutes(ActionDateTime, NextActionDateTime);
-
-                                }
-                                else if (AttendanceActionStatusID == 3)
-                                {
-                                    //find Actual work Time
-                                    DateTime NextActionDateTime = (DateTime)UserDailyShiftAttendance[row + 1].ActionDateTime;
-                                    _ActualWorkTime = _ActualWorkTime + await FindWorkTimeInMinutes(ActionDateTime, NextActionDateTime);
-                                }
-                                else if (AttendanceActionStatusID == 4)
-                                {
-                                }
+                                //find Actual work Time
+                                DateTime NextActionDateTime = (DateTime)list[row + 1].ActionDateTime;
+                                _ActualWorkTime = _ActualWorkTime + await FindWorkTimeInMinutes(ActionDateTime, NextActionDateTime);
+                            }
+                            else if (AttendanceActionStatusID == 4)
+                            {
                             }
                         }
                     }
                 }
+                            
+                            
+                
+
+                
                 if (UserDailyShiftJunctionID > 0)
                 {
-                    var UserDailyShiftJunctionData = await _context.UserDailyShiftJunctions.FirstOrDefaultAsync(x => x.UserDailyShiftJunctionId == UserDailyShiftJunctionID);
-                    if (UserDailyShiftJunctionData != null)
+                    int recordCount = 0;
+
+                    using (SqlConnection connection = new SqlConnection(myConnectionString))
                     {
-                        UserDailyShiftJunctionData.ActualWorkTime = _ActualWorkTime;
-                        UserDailyShiftJunctionData.TotalBreakTime = _TotalBreakTime;
-                        //UserDailyShiftJunctionData.LastModifiedBy = UserID;
-                        UserDailyShiftJunctionData.LastModifiedOn = DateTime.Now;
-                        await _context.SaveChangesAsync();
-                        IsUpdateWorkTime = true;
+                        using (SqlCommand command = new SqlCommand("SELECT COUNT(*) AS RecordCount FROM UserDailyShiftJunction WHERE UserDailyShiftJunctionID="+UserDailyShiftJunctionID+";", connection))
+                        {
+                            connection.Open();
+                            recordCount = (int)command.ExecuteScalar();
+                        }
                     }
+                    if(recordCount > 0)
+                    {
+                        using (SqlConnection connection2 = new SqlConnection(myConnectionString))
+                        {
+                            connection2.Open();
+                            SqlCommand cmdinsert = new SqlCommand("sp_UpdateUserWorkTime", connection2);
+                            cmdinsert.CommandType = System.Data.CommandType.StoredProcedure;
+                            cmdinsert.Parameters.Add("@ActualWorkTime", SqlDbType.Float).Value = _ActualWorkTime;
+                            cmdinsert.Parameters.Add("@TotalBreakTime", SqlDbType.BigInt).Value = _TotalBreakTime;
+                            cmdinsert.Parameters.Add("@UserDailyShiftJunctionID", SqlDbType.BigInt).Value = UserDailyShiftJunctionID;
+                            
+                            cmdinsert.ExecuteNonQuery();
+                            connection2.Close();
+                            IsUpdateWorkTime = true;
+                        }
+                    }
+                   
                 }
 
             }
@@ -261,27 +368,63 @@ namespace MAST_Service
 
         public async Task<bool?> UpdateOTWorkTime(long? UserDailyShiftJunctionID)
         {
+            var myConnectionString = this.Configuration.GetSection("ConnectionStrings")["DefaultConnection"];
             bool? IsUpdateWorkTime = false;
             try
             {
                 //find current day and shift
-                DateTime ActionDateTime_OTRequested = Convert.ToDateTime(await _context.UserDailyShiftAttendanceJunctions.Where(x => x.UserDailyShiftJunctionId == UserDailyShiftJunctionID && x.AttendanceActionStatusId == 5 && x.IsArchive != true).Select(x => x.ActionDateTime).FirstOrDefaultAsync());
-                DateTime ActionDateTime_OTCheckOut = Convert.ToDateTime(await _context.UserDailyShiftAttendanceJunctions.Where(x => x.UserDailyShiftJunctionId == UserDailyShiftJunctionID && x.AttendanceActionStatusId == 6 && x.IsArchive != true).Select(x => x.ActionDateTime).FirstOrDefaultAsync());
+                DateTime ActionDateTime_OTRequested = DateTime.Now;
+                DateTime ActionDateTime_OTCheckOut = DateTime.Now;
+                using (SqlConnection connection1 = new SqlConnection(myConnectionString))
+                {
+                    using (SqlCommand command = new SqlCommand("SELECT TOP 1 ActionDateTime FROM UserDailyShiftAttendanceJunction WHERE UserDailyShiftJunctionID=" + UserDailyShiftJunctionID + " and AttendanceActionStatusId=5 and IsArchive!='1';", connection1))
+                    {
+                        connection1.Open();
+                        ActionDateTime_OTRequested = (DateTime)command.ExecuteScalar();
+                        connection1.Close();
+                    }
+                }
+                using (SqlConnection connection1 = new SqlConnection(myConnectionString))
+                {
+                    using (SqlCommand command = new SqlCommand("SELECT TOP 1 ActionDateTime FROM UserDailyShiftAttendanceJunction WHERE UserDailyShiftJunctionID=" + UserDailyShiftJunctionID + " and AttendanceActionStatusId=6 and IsArchive!='1';", connection1))
+                    {
+                        connection1.Open();
+                        ActionDateTime_OTCheckOut = (DateTime)command.ExecuteScalar();
+                        connection1.Close();
+                    }
+                }
                 TimeSpan Time = (ActionDateTime_OTCheckOut - ActionDateTime_OTRequested);
                 double? ShiftTotalMinutes = Time.TotalMinutes;
                 //Shift details                                  
 
                 if (UserDailyShiftJunctionID > 0)
                 {
-                    var UserDailyShiftJunctionData = await _context.UserDailyShiftJunctions.FirstOrDefaultAsync(x => x.UserDailyShiftJunctionId == UserDailyShiftJunctionID);
-                    if (UserDailyShiftJunctionData != null)
+                    int recordCount = 0;
+
+                    using (SqlConnection connection = new SqlConnection(myConnectionString))
                     {
-                        UserDailyShiftJunctionData.TotalOverTime = ShiftTotalMinutes;
-                        //UserDailyShiftJunctionData.LastModifiedBy = UserID;
-                        UserDailyShiftJunctionData.LastModifiedOn = DateTime.Now;
-                        await _context.SaveChangesAsync();
-                        IsUpdateWorkTime = true;
+                        using (SqlCommand command = new SqlCommand("SELECT COUNT(*) AS RecordCount FROM UserDailyShiftJunction WHERE UserDailyShiftJunctionID=" + UserDailyShiftJunctionID + " and IsArchive!='1';", connection))
+                        {
+                            connection.Open();
+                            recordCount = (int)command.ExecuteScalar();
+                        }
                     }
+                    if (recordCount > 0)
+                    {
+                        using (SqlConnection connection2 = new SqlConnection(myConnectionString))
+                        {
+                            connection2.Open();
+                            SqlCommand cmdinsert = new SqlCommand("sp_UpdateUserOTTime", connection2);
+                            cmdinsert.CommandType = System.Data.CommandType.StoredProcedure;
+                            cmdinsert.Parameters.Add("@TotalOverTime", SqlDbType.Float).Value = ShiftTotalMinutes;
+                            cmdinsert.Parameters.Add("@UserDailyShiftJunctionID", SqlDbType.BigInt).Value = UserDailyShiftJunctionID;
+
+                            cmdinsert.ExecuteNonQuery();
+                            connection2.Close();
+                            IsUpdateWorkTime = true;
+                        }
+                    }
+                    
                 }
 
             }
