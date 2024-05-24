@@ -538,6 +538,9 @@ public partial class MastContext : DbContext
                 .HasDefaultValueSql("((0))")
                 .HasColumnName("IsAd_hocShift");
             entity.Property(e => e.IsArchive).HasDefaultValueSql("((0))");
+            entity.Property(e => e.IsWeekOffShift)
+                .HasDefaultValueSql("((0))")
+                .HasColumnName("IsWeek_OffShift");
             entity.Property(e => e.LastModifiedOn).HasColumnType("datetime");
             entity.Property(e => e.RegionId).HasColumnName("RegionID");
             entity.Property(e => e.ShiftTitle).HasMaxLength(500);

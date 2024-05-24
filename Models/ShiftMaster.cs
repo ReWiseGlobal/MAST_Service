@@ -39,6 +39,8 @@ public partial class ShiftMaster
 
     public bool? IsAdHocShift { get; set; }
 
+    public bool? IsWeekOffShift { get; set; }
+
     public virtual BranchMaster? Branch { get; set; }
 
     public virtual CurrencyMaster? Currency { get; set; }

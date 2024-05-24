@@ -13,25 +13,27 @@ namespace MAST_Service
     public class MainService : BackgroundService
     {
         private readonly ILogger<MainService> logger;        
-        private readonly ICheckOutProcessService checkOutProcess;
-        
-        public MainService(ILogger<MainService> _logger, ICheckOutProcessService checkOut)
+        //private readonly ICheckOutProcessService checkOutProcess;
+
+        private readonly IServiceProvider _serviceProvider;
+
+        public MainService(IServiceProvider serviceProvider, ILogger<MainService> _logger)
         {
+            _serviceProvider = serviceProvider;
             this.logger = _logger;
-            checkOutProcess = checkOut;
+            
         }
+       
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
+            
             while (!stoppingToken.IsCancellationRequested)
             {
-                try
+                using (var scope = _serviceProvider.CreateScope())
                 {
-                    checkOutProcess.checkExecutorProcess();
-                    
-                }
-                catch (Exception ex)
-                {
-                    logger.LogError(ex, ex.Message);
+                    var checkOutProcessService = scope.ServiceProvider.GetRequiredService<ICheckOutProcessService>();
+                    checkOutProcessService.checkExecutorProcess();
+                    // Perform operations using checkOutProcessService
                 }
 
                 await Task.Delay(1000 * 60, stoppingToken);

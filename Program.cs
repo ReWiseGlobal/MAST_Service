@@ -10,11 +10,15 @@ using Microsoft.Extensions.DependencyInjection;
 using MAST_Service.Models;
 
 IHost host = Host.CreateDefaultBuilder(args)
-    .ConfigureServices(services =>
+    .ConfigureServices((hostContext,services) =>
     {
-        
-        services.AddSingleton<ICheckOutProcessService, CheckOutProcessService>();
-        services.AddDbContext<MastContext>(opts => { }, ServiceLifetime.Singleton);
+
+        services.AddDbContext<MastContext>(opts =>
+                    opts.UseSqlServer(hostContext.Configuration.GetConnectionString("DefaultConnection")),
+                    ServiceLifetime.Scoped);
+
+        services.AddScoped<ICheckOutProcessService, CheckOutProcessService>();
+
         services.AddHostedService<MainService>();
 
     }).UseSerilog()
