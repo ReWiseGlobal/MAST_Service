@@ -39,7 +39,7 @@ namespace MAST_Service
                 logger.LogInformation("Worker function start", DateTimeOffset.Now);
 
                 var myConnectionString = this.Configuration.GetSection("ConnectionStrings")["DefaultConnection"];
-                
+               
                 using (SqlConnection connection = new SqlConnection(myConnectionString))
                 {
                     SqlCommand cmd = new SqlCommand("sp_GetListOfCheckInUsers", connection);
@@ -51,13 +51,32 @@ namespace MAST_Service
                     {
                         while (reader.Read())
                         {
-                            CheckoutProcessModel obj = new CheckoutProcessModel();
+                            bool? ishalfDayLEave = false;
+                           CheckoutProcessModel obj = new CheckoutProcessModel();
                             long UserDailyShiftJunctionId = Convert.ToInt64(reader["UserDailyShiftJunctionId"]);
                             long UserId = Convert.ToInt64(reader["UserId"]);
                             DateTime ShiftEndDateTime = Convert.ToDateTime(reader["ShiftEndDateTime"]);
                             DateTime ShiftStartDateTime = Convert.ToDateTime(reader["ShiftStartDateTime"]);
+                            DateTime ActionDateTime= Convert.ToDateTime(reader["ActionDateTime"]);
+                            using (SqlConnection connection1 = new SqlConnection(myConnectionString))
+                            {
+                                SqlCommand cmd1 = new SqlCommand("sp_CheckIsHalfDayLeave", connection1);
+                                cmd1.CommandType = System.Data.CommandType.StoredProcedure;
+                                cmd1.Parameters.Add("@Date", SqlDbType.DateTime).Value = ShiftStartDateTime.Date;
+                                cmd1.Parameters.Add("@userid", SqlDbType.BigInt).Value = UserId;
+                                connection1.Open();
+                                using (var reader1 = cmd1.ExecuteReader())
+                                {
 
-
+                                    if (reader1.HasRows)
+                                    {
+                                        ishalfDayLEave = true;
+                                    }
+                                }
+                                connection1.Close();
+                            }
+                            DateTime MindShiftTime = new DateTime();
+                            
                             using (SqlConnection connection1 = new SqlConnection(myConnectionString))
                             {
                                 SqlCommand cmd1 = new SqlCommand("sp_CheckIsCheckoutDone", connection1);
@@ -70,11 +89,25 @@ namespace MAST_Service
 
                                     if (!reader1.HasRows)
                                     {
-                                        var endtime = Convert.ToDateTime(ShiftEndDateTime).AddHours(5);
+                                        var endtime = Convert.ToDateTime(ShiftEndDateTime).AddHours(3);
                                         if (DateTime.Now > endtime)
                                         {
-                                            
+                                            if (ishalfDayLEave == true)
+                                            {
+                                                int halfdayHours = 0;
+                                                TimeSpan diff = Convert.ToDateTime(ShiftEndDateTime).Subtract(Convert.ToDateTime(ShiftStartDateTime));
+                                                halfdayHours = Convert.ToInt32(diff.TotalMinutes) / 2;
+                                                MindShiftTime = ShiftStartDateTime.AddMinutes(Convert.ToInt32(halfdayHours));
+                                                if (ActionDateTime >= MindShiftTime)
+                                                {
 
+                                                }
+                                                else
+                                                {
+                                                    ShiftEndDateTime = MindShiftTime;
+                                                }
+                                                logger.LogInformation("half day leave", DateTimeOffset.Now);
+                                            }
                                             using (SqlConnection connection2 = new SqlConnection(myConnectionString))
                                             {
                                                 connection2.Open();
@@ -84,6 +117,7 @@ namespace MAST_Service
                                                 cmdinsert.Parameters.Add("@UserId", SqlDbType.BigInt).Value = UserId;
                                                 cmdinsert.Parameters.Add("@AttendanceActionStatusId", SqlDbType.Int).Value = 4;
                                                 cmdinsert.Parameters.Add("@ActionDateTime", SqlDbType.DateTime).Value = ShiftEndDateTime;
+                                                cmdinsert.Parameters.Add("@isInsert", SqlDbType.Int).Value = 1;
                                                 cmdinsert.ExecuteNonQuery();
                                                 connection2.Close();
 
@@ -92,6 +126,40 @@ namespace MAST_Service
                                             bool? IsUpdateWorkTime = await UpdateWorkTime(UserDailyShiftJunctionId);
                                         }
 
+                                    }
+                                    else
+                                    {
+                                        //if (ishalfDayLEave == true)
+                                        //{
+                                        //    var endtime = Convert.ToDateTime(ShiftEndDateTime).AddHours(5);
+                                        //    if (DateTime.Now > endtime)
+                                        //    {
+                                        //        DateTime _UserDailyShiftAttendance_CheckInDateTime = ActionDateTime;
+                                        //        DateTime _UserDailyShiftAttendance_CheckOutDateTime = new DateTime();
+                                        //        while (reader1.Read())
+                                        //        {
+
+                                        //            _UserDailyShiftAttendance_CheckOutDateTime = Convert.ToDateTime(reader1["ActionDateTime"]);
+                                        //        }
+
+                                        //        using (SqlConnection connection2 = new SqlConnection(myConnectionString))
+                                        //        {
+                                        //            connection2.Open();
+                                        //            SqlCommand cmdinsert = new SqlCommand("sp_insertCheckOutOfUser", connection2);
+                                        //            cmdinsert.CommandType = System.Data.CommandType.StoredProcedure;
+                                        //            cmdinsert.Parameters.Add("@UserDailyShiftJunctionId", SqlDbType.BigInt).Value = UserDailyShiftJunctionId;
+                                        //            cmdinsert.Parameters.Add("@UserId", SqlDbType.BigInt).Value = UserId;
+                                        //            cmdinsert.Parameters.Add("@AttendanceActionStatusId", SqlDbType.Int).Value = 4;
+                                        //            cmdinsert.Parameters.Add("@ActionDateTime", SqlDbType.DateTime).Value = ShiftEndDateTime;
+                                        //            cmdinsert.Parameters.Add("@isInsert", SqlDbType.Int).Value = 0;
+                                        //            cmdinsert.ExecuteNonQuery();
+                                        //            connection2.Close();
+
+                                        //        }
+                                        //    }
+                                        //}
+                                        
+                                        
                                     }
                                 }
 
