@@ -15,6 +15,7 @@ using Microsoft.EntityFrameworkCore;
 using static System.Net.Mime.MediaTypeNames;
 using System.Reflection.PortableExecutable;
 using Microsoft.Extensions.Configuration;
+using MAST_Service.ServiceModels;
 
 namespace MAST_Service
 {
@@ -331,6 +332,9 @@ namespace MAST_Service
                                             }
 
                                             long? NotificationID = 0;
+                                            clsEncryptDecrypt objencry = new clsEncryptDecrypt();
+                                            string? Enc_ActivityID = objencry.Encrypt(Convert.ToString(OTExtendRequestID));
+
                                             using (SqlConnection connection5 = new SqlConnection(myConnectionString))
                                             {
                                                 using (SqlCommand command = new SqlCommand("sp_CreateNotification", connection5))
@@ -341,6 +345,7 @@ namespace MAST_Service
                                                     command.Parameters.Add("@NotificationText", SqlDbType.NVarChar).Value = "User " + SenderName + ", has sent you new request for OT. Please review and take appropriate action.";
                                                     command.Parameters.Add("@NotificationTitle", SqlDbType.NVarChar).Value = NotificationTitle;
                                                     command.Parameters.Add("@ActivityID", SqlDbType.BigInt).Value = OTExtendRequestID;
+                                                    command.Parameters.Add("@Enc_ActivityID", SqlDbType.NVarChar).Value = Enc_ActivityID;
                                                     SqlParameter outputParam = new SqlParameter("@NotificationID", SqlDbType.BigInt)
                                                     {
                                                         Direction = ParameterDirection.Output
