@@ -675,9 +675,13 @@ namespace MAST_Service
                         connection.Open();
                         using (SqlDataReader reader = command.ExecuteReader())
                         {
-                            ShiftName = reader["ShiftName"].ToString();
-                            DateTime shiftDate = Convert.ToDateTime(reader["ShiftDate"]);
-                            ShiftDate = shiftDate.ToString("MM/dd/yyyy");
+                            if(reader.Read())
+                            {
+                                ShiftName = reader["ShiftName"].ToString();
+                                DateTime shiftDate = Convert.ToDateTime(reader["ShiftDate"]);
+                                ShiftDate = shiftDate.ToString("MM/dd/yyyy");
+                            }
+                           
                         }
                         connection.Close();
                     }
