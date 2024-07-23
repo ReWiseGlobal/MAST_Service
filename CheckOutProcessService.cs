@@ -14,6 +14,7 @@ using MAST_Service.Models;
 using Microsoft.EntityFrameworkCore;
 using static System.Net.Mime.MediaTypeNames;
 using System.Reflection.PortableExecutable;
+using Microsoft.Extensions.Configuration;
 
 namespace MAST_Service
 {
@@ -39,7 +40,7 @@ namespace MAST_Service
                 logger.LogInformation("Worker function start", DateTimeOffset.Now);
 
                 var myConnectionString = this.Configuration.GetSection("ConnectionStrings")["DefaultConnection"];
-               
+
                 using (SqlConnection connection = new SqlConnection(myConnectionString))
                 {
                     SqlCommand cmd = new SqlCommand("sp_GetListOfCheckInUsers", connection);
@@ -52,12 +53,12 @@ namespace MAST_Service
                         while (reader.Read())
                         {
                             bool? ishalfDayLEave = false;
-                           CheckoutProcessModel obj = new CheckoutProcessModel();
+                            CheckoutProcessModel obj = new CheckoutProcessModel();
                             long UserDailyShiftJunctionId = Convert.ToInt64(reader["UserDailyShiftJunctionId"]);
                             long UserId = Convert.ToInt64(reader["UserId"]);
                             DateTime ShiftEndDateTime = Convert.ToDateTime(reader["ShiftEndDateTime"]);
                             DateTime ShiftStartDateTime = Convert.ToDateTime(reader["ShiftStartDateTime"]);
-                            DateTime ActionDateTime= Convert.ToDateTime(reader["ActionDateTime"]);
+                            DateTime ActionDateTime = Convert.ToDateTime(reader["ActionDateTime"]);
                             using (SqlConnection connection1 = new SqlConnection(myConnectionString))
                             {
                                 SqlCommand cmd1 = new SqlCommand("sp_CheckIsHalfDayLeave", connection1);
@@ -76,7 +77,7 @@ namespace MAST_Service
                                 connection1.Close();
                             }
                             DateTime MindShiftTime = new DateTime();
-                            
+
                             using (SqlConnection connection1 = new SqlConnection(myConnectionString))
                             {
                                 SqlCommand cmd1 = new SqlCommand("sp_CheckIsCheckoutDone", connection1);
@@ -158,15 +159,15 @@ namespace MAST_Service
                                         //        }
                                         //    }
                                         //}
-                                        
-                                        
+
+
                                     }
                                 }
 
                                 connection1.Close();
                             }
 
-                            
+
                         }
                     }
 
@@ -207,16 +208,40 @@ namespace MAST_Service
                             if (recordCount == 0)
                             {
                                 int? OTHours = 0;
+                                long? OTExtendRequestID = null;
+
+                                //using (SqlConnection connection1 = new SqlConnection(myConnectionString))
+                                //{
+                                //    using (SqlCommand command = new SqlCommand("SELECT TOP 1 UserOtextendInMinutes FROM OtextendRequestJunction WHERE UserDailyShiftAttendanceID=" + UserDailyShiftAttendanceID + " and IsArchive!='1';", connection1))
+                                //    {
+                                //        connection1.Open();
+                                //        OTHours = (int)command.ExecuteScalar();
+                                //        connection1.Close();
+                                //    }
+                                //}
+
                                 using (SqlConnection connection1 = new SqlConnection(myConnectionString))
                                 {
-                                    using (SqlCommand command = new SqlCommand("SELECT TOP 1 UserOtextendInMinutes FROM OtextendRequestJunction WHERE UserDailyShiftAttendanceID=" + UserDailyShiftAttendanceID + " and IsArchive!='1';", connection1))
+                                    string query = "SELECT TOP 1 OtextendRequestId, UserOtextendInMinutes " + "FROM OtextendRequestJunction " + "WHERE UserDailyShiftAttendanceID=@UserDailyShiftAttendanceID AND IsArchive != '1';";
+
+                                    using (SqlCommand command = new SqlCommand(query, connection1))
                                     {
+                                        command.Parameters.AddWithValue("@UserDailyShiftAttendanceID", UserDailyShiftAttendanceID);
                                         connection1.Open();
-                                        OTHours = (int)command.ExecuteScalar();
+
+                                        using (SqlDataReader sqlReader = command.ExecuteReader())
+                                        {
+                                            if (sqlReader.Read())
+                                            {
+                                                OTExtendRequestID = sqlReader["OtextendRequestId"] as long?;
+                                                OTHours = sqlReader["UserOtextendInMinutes"] as int?;
+                                            }
+                                        }
+
                                         connection1.Close();
                                     }
                                 }
-                                
+
                                 if (OTHours != null && ActionDateTime != null)
                                 {
                                     var endDate = Convert.ToDateTime(ActionDateTime).AddMinutes(Convert.ToDouble(OTHours));
@@ -235,21 +260,136 @@ namespace MAST_Service
                                             connection2.Close();
 
                                         }
-                                        
 
                                         bool? IsUpdateWorkTime = await UpdateOTWorkTime(UserDailyShiftJunctionId);
+
+                                        if (OTExtendRequestID > 0)
+                                        {
+
+                                            long? SupervisorID = 1;
+                                            using (SqlConnection connection3 = new SqlConnection(myConnectionString))
+                                            {
+                                                using (SqlCommand command = new SqlCommand("sp_GetSupervisorID", connection3))
+                                                {
+                                                    command.CommandType = CommandType.StoredProcedure;
+                                                    command.Parameters.Add("@UserId", SqlDbType.BigInt).Value = UserId;
+                                                    connection3.Open();
+                                                    long? supervisorID = (long?)command.ExecuteScalar();
+                                                    SupervisorID = supervisorID;
+                                                    connection3.Close();
+                                                }
+                                            }
+
+                                            var SenderName = "";
+                                            string? SenderEmail = "";
+                                            long? SenderUserID = 0;
+                                            string? ReceiverName = "";
+                                            string? ReceiverEmail = "";
+                                            int? NotificationTypeID = 16;
+                                            string? NotificationText = "";
+                                            string? NotificationTitle = "Request for OT";
+
+                                            using (SqlConnection connection4 = new SqlConnection(myConnectionString))
+                                            {
+                                                using (SqlCommand command = new SqlCommand("sp_GetUserDetails", connection4))
+                                                {
+                                                    command.CommandType = CommandType.StoredProcedure;
+                                                    command.Parameters.Add("@UserId", SqlDbType.BigInt).Value = UserId;
+                                                    connection4.Open();
+                                                    using (SqlDataReader senderReader = command.ExecuteReader())
+                                                    {
+                                                        if (senderReader.Read())
+                                                        {
+                                                            SenderUserID = senderReader["UserID"] as long?;
+                                                            SenderName = senderReader["UserName"].ToString();
+                                                            SenderEmail = senderReader["EmailAddress"].ToString();
+                                                        }
+                                                    }
+                                                    connection4.Close();
+                                                }
+
+                                                using (SqlCommand command = new SqlCommand("sp_GetReceiverDetails", connection4))
+                                                {
+                                                    command.CommandType = CommandType.StoredProcedure;
+                                                    command.Parameters.Add("@UserId", SqlDbType.BigInt).Value = SupervisorID;
+                                                    connection4.Open();
+                                                    using (SqlDataReader receiverReader = command.ExecuteReader())
+                                                    {
+                                                        if (receiverReader.Read())
+                                                        {
+                                                            ReceiverName = receiverReader["UserName"].ToString();
+                                                            ReceiverEmail = receiverReader["EmailAddress"].ToString();
+                                                        }
+                                                    }
+                                                    connection4.Close();
+                                                }
+                                            }
+
+                                            long? NotificationID = 0;
+                                            using (SqlConnection connection5 = new SqlConnection(myConnectionString))
+                                            {
+                                                using (SqlCommand command = new SqlCommand("sp_CreateNotification", connection5))
+                                                {
+                                                    command.CommandType = CommandType.StoredProcedure;
+                                                    command.Parameters.Add("@UserID", SqlDbType.BigInt).Value = UserId;
+                                                    command.Parameters.Add("@NotificationTypeID", SqlDbType.Int).Value = NotificationTypeID;
+                                                    command.Parameters.Add("@NotificationText", SqlDbType.NVarChar).Value = "User " + SenderName + ", has sent you new request for OT. Please review and take appropriate action.";
+                                                    command.Parameters.Add("@NotificationTitle", SqlDbType.NVarChar).Value = NotificationTitle;
+                                                    command.Parameters.Add("@ActivityID", SqlDbType.BigInt).Value = OTExtendRequestID;
+                                                    SqlParameter outputParam = new SqlParameter("@NotificationID", SqlDbType.BigInt)
+                                                    {
+                                                        Direction = ParameterDirection.Output
+                                                    };
+                                                    command.Parameters.Add(outputParam);
+                                                    connection5.Open();
+                                                    command.ExecuteNonQuery();
+                                                    NotificationID = (long?)outputParam.Value;
+                                                    connection5.Close();
+                                                }
+                                            }
+
+                                            long? UserNotificationJunctionID = 0;
+                                            using (SqlConnection connection6 = new SqlConnection(myConnectionString))
+                                            {
+                                                using (SqlCommand command = new SqlCommand("sp_SendUserNotification", connection6))
+                                                {
+                                                    command.CommandType = CommandType.StoredProcedure;
+                                                    command.Parameters.Add("@UserID", SqlDbType.BigInt).Value = UserId;
+                                                    command.Parameters.Add("@NotificationID", SqlDbType.BigInt).Value = NotificationID;
+                                                    command.Parameters.Add("@ReceivalID", SqlDbType.BigInt).Value = SupervisorID;
+                                                    SqlParameter outputParam = new SqlParameter("@UserNotificationJunctionID", SqlDbType.BigInt)
+                                                    {
+                                                        Direction = ParameterDirection.Output
+                                                    };
+                                                    command.Parameters.Add(outputParam);
+                                                    connection6.Open();
+                                                    command.ExecuteNonQuery();
+                                                    UserNotificationJunctionID = (long?)outputParam.Value;
+                                                    connection6.Close();
+                                                }
+                                            }
+
+                                            string? SenderComments = "";
+                                            using (SqlConnection connection7 = new SqlConnection(myConnectionString))
+                                            {
+                                                using (SqlCommand command = new SqlCommand("SELECT SenderComments FROM OtextendRequestJunctions WHERE OtextendRequestId = @OTExtendRequestID AND IsArchive != 1", connection7))
+                                                {
+                                                    command.Parameters.Add("@OTExtendRequestID", SqlDbType.BigInt).Value = OTExtendRequestID;
+                                                    connection7.Open();
+                                                    SenderComments = (string)command.ExecuteScalar();
+                                                    connection7.Close();
+                                                }
+                                            }
+                                            bool? _SendEmailToSupervisorForRequestOT = await SendEmailToSupervisorForRequestOT(SenderName, SenderEmail, ReceiverName, ReceiverEmail, SenderComments, UserDailyShiftJunctionId);
+                                        }
                                     }
                                 }
                             }
-
-
                         }
                     }
-
                     connection.Close();
                 }
-                
-                
+
                 logger.LogInformation("Worker function end", DateTimeOffset.Now);
             }
             catch (Exception ex)
@@ -258,7 +398,7 @@ namespace MAST_Service
             }
         }
 
-        public async Task<bool?> UpdateWorkTime( long? UserDailyShiftJunctionID)
+        public async Task<bool?> UpdateWorkTime(long? UserDailyShiftJunctionID)
         {
             var myConnectionString = this.Configuration.GetSection("ConnectionStrings")["DefaultConnection"];
             bool? IsUpdateWorkTime = false;
@@ -375,24 +515,24 @@ namespace MAST_Service
                         }
                     }
                 }
-                            
-                            
-                
 
-                
+
+
+
+
                 if (UserDailyShiftJunctionID > 0)
                 {
                     int recordCount = 0;
 
                     using (SqlConnection connection = new SqlConnection(myConnectionString))
                     {
-                        using (SqlCommand command = new SqlCommand("SELECT COUNT(*) AS RecordCount FROM UserDailyShiftJunction WHERE UserDailyShiftJunctionID="+UserDailyShiftJunctionID+";", connection))
+                        using (SqlCommand command = new SqlCommand("SELECT COUNT(*) AS RecordCount FROM UserDailyShiftJunction WHERE UserDailyShiftJunctionID=" + UserDailyShiftJunctionID + ";", connection))
                         {
                             connection.Open();
                             recordCount = (int)command.ExecuteScalar();
                         }
                     }
-                    if(recordCount > 0)
+                    if (recordCount > 0)
                     {
                         using (SqlConnection connection2 = new SqlConnection(myConnectionString))
                         {
@@ -402,13 +542,13 @@ namespace MAST_Service
                             cmdinsert.Parameters.Add("@ActualWorkTime", SqlDbType.Float).Value = _ActualWorkTime;
                             cmdinsert.Parameters.Add("@TotalBreakTime", SqlDbType.BigInt).Value = _TotalBreakTime;
                             cmdinsert.Parameters.Add("@UserDailyShiftJunctionID", SqlDbType.BigInt).Value = UserDailyShiftJunctionID;
-                            
+
                             cmdinsert.ExecuteNonQuery();
                             connection2.Close();
                             IsUpdateWorkTime = true;
                         }
                     }
-                   
+
                 }
 
             }
@@ -492,7 +632,7 @@ namespace MAST_Service
                             IsUpdateWorkTime = true;
                         }
                     }
-                    
+
                 }
 
             }
@@ -503,5 +643,72 @@ namespace MAST_Service
 
             return IsUpdateWorkTime;
         }
+
+
+        public async Task<bool?> SendEmailToSupervisorForRequestOT(string? SenderName, string? SenderEmail, string? ReceiverName, string? ReceiverEmail, string? SenderComments, long? UserDailyShiftJunctionID)
+        {
+            bool? sendEmailNotification = false;
+            var myConnectionString = this.Configuration.GetSection("ConnectionStrings")["DefaultConnection"];
+
+            try
+            {
+                string ShiftName = "";
+                string ShiftDate = "";
+
+                using (SqlConnection connection = new SqlConnection(myConnectionString))
+                {
+                    using (SqlCommand command = new SqlCommand("sp_GetShiftDetails", connection))
+                    {
+                        command.CommandType = System.Data.CommandType.StoredProcedure;
+                        command.Parameters.AddWithValue("@UserDailyShiftJunctionID", UserDailyShiftJunctionID);
+
+                        connection.Open();
+                        using (SqlDataReader reader = command.ExecuteReader())
+                        {
+                            ShiftName = reader["ShiftName"].ToString();
+                            DateTime shiftDate = Convert.ToDateTime(reader["ShiftDate"]);
+                            ShiftDate = shiftDate.ToString("MM/dd/yyyy");
+                        }
+                        connection.Close();
+                    }
+                }
+
+                var appSettingsSectionWebsite = Configuration.GetSection("Wesite");
+                var appSettingsSectionEmail = Configuration.GetSection("EmailConfig");
+                var websiteUrl = appSettingsSectionWebsite.GetValue<string>("WesiteUrl");
+                var apiKey = appSettingsSectionEmail.GetValue<string>("APIKey");
+                var templateId = appSettingsSectionEmail.GetValue<string>("MAST_NotificationToSupervisorAboutRequestForApprovalOfOTSentByEmployee");
+                var sendEmailFrom = appSettingsSectionEmail.GetValue<string>("Email_From");
+                var sendEmailFromName = appSettingsSectionEmail.GetValue<string>("SendEmailFromName");
+                var bcc1 = appSettingsSectionEmail.GetValue<string>("Email_Bcc1");
+                var bcc2 = appSettingsSectionEmail.GetValue<string>("Email_Bcc2");
+                var cc = appSettingsSectionEmail.GetValue<string>("Email_cc");
+
+                SendGridClient client = new SendGridClient(apiKey);
+                SendGridMessage message = new SendGrid.Helpers.Mail.SendGridMessage();
+                message.From = new EmailAddress(sendEmailFrom, sendEmailFromName);
+                message.AddTo(ReceiverEmail);
+                message.AddBcc(bcc1, sendEmailFromName);
+                message.AddBcc(bcc2, sendEmailFromName);
+
+                message.Subject = "Request for approval Of OT";
+
+                message.SetTemplateId(templateId);
+                message.AddSubstitution("@Model.UserName", ReceiverName);
+                message.AddSubstitution("@Model.ShiftName", ShiftName);
+                message.AddSubstitution("@Model.ShiftDate", ShiftDate);
+                message.AddSubstitution("@Model.EmployeeName", SenderName);
+                message.AddSubstitution("@Model.EmployeeComment", SenderComments);
+                await client.SendEmailAsync(message);
+                sendEmailNotification = true;
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex.Message);
+            }
+
+            return sendEmailNotification;
+        }
+
     }
 }
