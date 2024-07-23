@@ -222,7 +222,7 @@ namespace MAST_Service
 
                                 using (SqlConnection connection1 = new SqlConnection(myConnectionString))
                                 {
-                                    string query = "SELECT TOP 1 OtextendRequestId, UserOtextendInMinutes " + "FROM OtextendRequestJunction " + "WHERE UserDailyShiftAttendanceID=@UserDailyShiftAttendanceID AND IsArchive != '1';";
+                                    string query = "SELECT TOP 1 OtextendRequestId, UserOtextendInMinutes " + "FROM OtextendRequestJunction " + "WHERE UserDailyShiftAttendanceID=@UserDailyShiftAttendanceID AND IsArchive != '1' and IsOTApproved == '0';";
 
                                     using (SqlCommand command = new SqlCommand(query, connection1))
                                     {
