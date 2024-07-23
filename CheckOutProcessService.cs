@@ -222,7 +222,7 @@ namespace MAST_Service
 
                                 using (SqlConnection connection1 = new SqlConnection(myConnectionString))
                                 {
-                                    string query = "SELECT TOP 1 OtextendRequestId, UserOtextendInMinutes " + "FROM OtextendRequestJunction " + "WHERE UserDailyShiftAttendanceID=@UserDailyShiftAttendanceID AND IsArchive != '1' and IsOTApproved == '0';";
+                                    string query = "SELECT TOP 1 OtextendRequestId, UserOtextendInMinutes " + "FROM OtextendRequestJunction " + "WHERE UserDailyShiftAttendanceID=@UserDailyShiftAttendanceID AND IsArchive != '1' and IsOTApproved = '0';";
 
                                     using (SqlCommand command = new SqlCommand(query, connection1))
                                     {
@@ -256,6 +256,7 @@ namespace MAST_Service
                                             cmdinsert.Parameters.Add("@UserId", SqlDbType.BigInt).Value = UserId;
                                             cmdinsert.Parameters.Add("@AttendanceActionStatusId", SqlDbType.Int).Value = 6;
                                             cmdinsert.Parameters.Add("@ActionDateTime", SqlDbType.DateTime).Value = endDate;
+                                            cmdinsert.Parameters.Add("@isInsert", SqlDbType.Int).Value = 1;
                                             cmdinsert.ExecuteNonQuery();
                                             connection2.Close();
 
@@ -275,7 +276,11 @@ namespace MAST_Service
                                                     command.Parameters.Add("@UserId", SqlDbType.BigInt).Value = UserId;
                                                     connection3.Open();
                                                     long? supervisorID = (long?)command.ExecuteScalar();
-                                                    SupervisorID = supervisorID;
+                                                    if(supervisorID> 0)
+                                                    {
+                                                        SupervisorID = supervisorID;
+                                                    }
+                                                    
                                                     connection3.Close();
                                                 }
                                             }
@@ -372,7 +377,7 @@ namespace MAST_Service
                                             string? SenderComments = "";
                                             using (SqlConnection connection7 = new SqlConnection(myConnectionString))
                                             {
-                                                using (SqlCommand command = new SqlCommand("SELECT SenderComments FROM OtextendRequestJunctions WHERE OtextendRequestId = @OTExtendRequestID AND IsArchive != 1", connection7))
+                                                using (SqlCommand command = new SqlCommand("SELECT SenderComments FROM OtextendRequestJunction WHERE OtextendRequestId = @OTExtendRequestID AND IsArchive != 1", connection7))
                                                 {
                                                     command.Parameters.Add("@OTExtendRequestID", SqlDbType.BigInt).Value = OTExtendRequestID;
                                                     connection7.Open();
