@@ -386,7 +386,8 @@ namespace MAST_Service
                                                 {
                                                     command.Parameters.Add("@OTExtendRequestID", SqlDbType.BigInt).Value = OTExtendRequestID;
                                                     connection7.Open();
-                                                    SenderComments = (string)command.ExecuteScalar();
+                                                    var result = command.ExecuteScalar();
+                                                    SenderComments = Convert.ToString(result); 
                                                     connection7.Close();
                                                 }
                                             }
