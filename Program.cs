@@ -15,9 +15,11 @@ IHost host = Host.CreateDefaultBuilder(args)
 
         services.AddDbContext<MastContext>(opts =>
                     opts.UseSqlServer(hostContext.Configuration.GetConnectionString("DefaultConnection")),
-                    ServiceLifetime.Scoped);
+                    ServiceLifetime.Singleton);
 
-        services.AddScoped<ICheckOutProcessService, CheckOutProcessService>();
+        services.AddSingleton<ICheckOutProcessService, CheckOutProcessService>();
+        services.AddSingleton<IReleaseDateReminderService, ReleaseDateReminderService>();
+
 
         services.AddHostedService<MainService>();
 

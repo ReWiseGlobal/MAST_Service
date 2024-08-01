@@ -12,18 +12,22 @@ namespace MAST_Service
 {
     public class MainService : BackgroundService
     {
-        private readonly ILogger<MainService> logger;        
+        private readonly ILogger<MainService> logger;
         //private readonly ICheckOutProcessService checkOutProcess;
+        private readonly IReleaseDateReminderService releaseDateReminderService;
+
 
         private readonly IServiceProvider _serviceProvider;
 
-        public MainService(IServiceProvider serviceProvider, ILogger<MainService> _logger)
+        public MainService(IServiceProvider serviceProvider, ILogger<MainService> _logger, IReleaseDateReminderService _releaseDateReminderService)
         {
             _serviceProvider = serviceProvider;
             this.logger = _logger;
-            
+            releaseDateReminderService = _releaseDateReminderService;
+
+
         }
-       
+
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
             
@@ -34,6 +38,8 @@ namespace MAST_Service
                     var checkOutProcessService = scope.ServiceProvider.GetRequiredService<ICheckOutProcessService>();
                     checkOutProcessService.checkExecutorProcess();
                     // Perform operations using checkOutProcessService
+
+                    releaseDateReminderService.checkEmployeeReleaseDate();
                 }
 
                 await Task.Delay(1000 * 60, stoppingToken);
