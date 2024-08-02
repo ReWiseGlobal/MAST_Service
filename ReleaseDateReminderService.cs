@@ -95,10 +95,10 @@ namespace MAST_Service
                                             if (entryCount > 0)
                                             {
                                                 SqlCommand cmdUpdate1 = new SqlCommand(
-                                                    "UPDATE UserJobValidityExtendMaster SET IsHrExtendUserValidity = 2 WHERE UserJobValidityExtendID = @UserJobValidityExtendID AND IsArchive = 0",
+                                                    "UPDATE UserJobValidityExtendMaster SET IsHrExtendUserValidity = '2' WHERE UserJobValidityExtendID = @UserJobValidityExtendID AND IsArchive = 0",
                                                     connectionUpsert);
                                                 cmdUpdate1.Parameters.Add("@UserJobValidityExtendID", SqlDbType.BigInt).Value = entryCount;
-                                                cmdUpdate.ExecuteNonQuery();
+                                                cmdUpdate1.ExecuteNonQuery();
                                             }
 
                                             connectionUpsert.Close();
@@ -113,7 +113,7 @@ namespace MAST_Service
                                 {
                                     DateTime notificationDate = releaseDate.AddDays(-daysBefore);
 
-                                    if (now.Date == notificationDate.Date && now.Hour == 12)
+                                    if (now.Date == notificationDate.Date && now.Hour == 13)
                                     {
                                         if (hrActionTaken)
                                         {
