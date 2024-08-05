@@ -113,7 +113,7 @@ namespace MAST_Service
                                 {
                                     DateTime notificationDate = releaseDate.AddDays(-daysBefore);
 
-                                    if (now.Date == notificationDate.Date && now.Hour == 13)
+                                    if (now.Date == notificationDate.Date && now.Hour == 14)
                                     {
                                         if (hrActionTaken)
                                         {
